@@ -1,8 +1,6 @@
-:- module(_,_, [assertions]).
-:- use_module(library(iso_misc)).
+:- module(_,_, [assertions,dynamic_clauses]).
+:- use_module(library(classic/classic_predicates)).
 
-:- export(main/0).
-main.
 
 :- doc(title, "Segunda pr@'{a}ctica - CPU Anular").
 :- doc(subtitle, "Programaci@'{o}n Declarativa: L@'{o}gica y Restricciones").
@@ -124,7 +122,7 @@ create_symbol_list(I,Max,R,S) :-
  
 
 :- pred ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) # "Materializa la transici@'{o}n entre los estados actual y siguiente mediante la ejecuci@'{o}n de una instrucci@'{o}n. @includedef{ejecutar_instruccion/3}".
-:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(3)) => (C=regs(1,2,3,3,4,5,6)) + fails # "Prueba".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(3)) => (C=regs(1,2,3,3,4,5,6)) + not_fails # "Prueba".
 ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) :-
     execute_instruction(EstadoActual,Instruccion,EstadoSiguiente).
 
@@ -138,12 +136,12 @@ execute_instruction(Ea,move(I),Es) :- % I < N
     subcopy_term(N,Ea,Es).
 execute_instruction(Ea,move(I),Es) :- % I = N
     nonvar(I),
+    I1 is I+1,
     I >= 1,
     functor(Ea,regs,N),
     functor(Es,regs,N),
     I < N,
     arg(I,Ea,X1),
-    I1 is I+1,
     arg(I1,Es,X1),
     subcopy_term(N,Ea,Es).
 
@@ -159,18 +157,44 @@ execute_instruction(Ea,swap(I,J),Es) :-
     arg(J,Es,Xi),
     subcopy_term(N,Ea,Es).
 
+% Backtracking for move
 execute_instruction(Ea,move(I),Es) :-
     var(I),
     functor(Ea,regs,N),
-    execute_instruction(Ea,move(1),N,Es).
-execute_instruction(Ea,move(I),_,Es) :- % Backtraking
-    nonvar(I),
+    execute_instruction1(Ea,move(0),I,N,Es).
+
+execute_instruction1(Ea,move(I),I,_,Es) :- % solution
     execute_instruction(Ea,move(I),Es).
-execute_instruction(Ea,move(I),Max,Es) :- % Backtraking
-    I =< Max,
-    I1 is I+1,
-    execute_instruction(Ea,move(I),Es),
-    execute_instruction(Ea,move(I1),Max,Es).
+execute_instruction1(Ea,move(I1),I,N,Es) :-
+    nonvar(I1),
+    I1 =< N,
+    I2 is I1+1,
+    execute_instruction1(Ea,move(I2),I,N,Es).
+    
+% Backtracking for swap
+execute_instruction(Ea,swap(I,J),Es) :-
+    var(I),
+    functor(Ea,regs,N),
+    execute_instruction1(Ea,swap(0,1),I,J,N,Es).
+
+execute_instruction1(Ea,swap(I,J),I,J,_,Es) :- % solution
+    I \== J,
+    execute_instruction(Ea,swap(I,J),Es).
+execute_instruction1(Ea,swap(I1,J1),I,J,N,Es) :-
+    nonvar(I1),
+    nonvar(J1),
+    I1 < J1,
+    J1 =< N,
+    J2 is J1+1,
+    execute_instruction1(Ea,swap(I1,J2),I,J,N,Es).
+execute_instruction1(Ea,swap(I1,J1),I,J,N,Es) :-
+    nonvar(I1),
+    nonvar(J1),
+    I1 < J1,
+    J1 =< N,
+    I2 is I1+1,
+    J2 is J1+1,
+    execute_instruction1(Ea,swap(I2,J2),I,J,N,Es).
 
 % Aqui hay que pasarle functor del mismo tamaño
 subcopy_term(0,_,_).
@@ -190,12 +214,69 @@ subcopy_term(I,Ea,Es) :-
 
 :- pred generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) # "Ser@'{a} cierto si @var{ListaDeInstrucciones} unifica con una lista de instrucciones de la CPU que aplicadas secuencialmente desde un estado inicial de los registros representado por @var{EstadoInicial} permite transitar hacia el estado final de los registros representado por @var{EstadoFinal}. @includedef{generador_de_codigo/3}".
 generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) :-
-    code_generator(EstadoInicial,EstadoFinal,ListaDeInstrucciones).
+    eliminar_comodines(EstadoInicial,InicialSinComodines,_),
+    eliminar_comodines(EstadoFinal,FinalSinComodines,_),
+    code_generator(InicialSinComodines,FinalSinComodines,ListaDeInstrucciones).
 
-code_generator(Ei,Ef,[L|Ll]) :-
-    ejecutar_instruccion(Ei,L,Ef).
-    
+%code_generator(Ef,Ef,[]).
+code_generator(Ei,Ef,Path) :-
+    retractall( seen( _ ) ),
+    bfs( Ef, [[Ei,[Ei]]], [_|Path] ). 
 
+% given a goal integer, it tries to determine the shortest
+% series of actions needed to get to this integer given any other
+% integer.  The actions allowed are increment, decrement, and
+% multiply by two
+
+% states are represented as two element lists
+% the first is a number, and the second is a path
+
+% gets the successors of the given state
+% note that it must be redone via backtracking in order to
+% get all of the successors
+successors( [N,Path], [NewN, [Function|Path]] ) :-
+	ejecutar_instruccion(N,Function,NewN).
+
+% gets all successors as a list
+successors_list( State, Result ) :-
+	findall(X,successors(State,X),Result).
+
+% records results that have already been seen
+:- dynamic seen/1.
+
+% given a list of states, it will add each state to the table
+% of states that have already been seen
+add_to_seen( [] ).
+add_to_seen( [[N|_]|Rest] ) :-
+        assertz( seen( N ) ),
+        add_to_seen( Rest ).
+
+% removes all states that have already been seen
+% returns a new list
+remove_seen( [], [] ).
+remove_seen( [[N|_]|Rest], Result ) :-
+        seen( N ), !,
+        remove_seen( Rest, Result ).
+remove_seen( [State|Rest], [State|Result] ) :-
+        !, remove_seen( Rest, Result ).
+
+% performs a BFS, with the given goal and queue
+bfs( Goal, [[Goal|[Path]]|_], FinalPath ) :-
+        % note that operations are added from the front, and it's
+        % more natural to read them left to right
+        !, reverse( Path, FinalPath ).
+bfs( Goal, [State|Rest], Result ) :-
+	successors_list( State, Successors ),
+	remove_seen( Successors, NewStates ),
+	add_to_seen( NewStates ),
+	append( Rest, NewStates, Queue ),
+	bfs( Goal, Queue, Result ).
+
+% runs the BFS for the given start integer and goal integer
+% returns the path to reach the goal in "Path"
+go( Start, Goal, Path ) :-
+        retractall( seen( _ ) ),
+        bfs( Goal, [[Start,[Start]]], Path ). 
 
 %%%% Auxiliary predicates
 
