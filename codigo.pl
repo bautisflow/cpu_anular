@@ -1,14 +1,36 @@
-:- module(_,_, [assertions,dynamic_clauses]).
+:- module(_,_, [assertions]).
 :- use_module(library(classic/classic_predicates)).
+:- use_package(dynamic).
 
 
 :- doc(title, "Segunda pr@'{a}ctica - CPU Anular").
 :- doc(subtitle, "Programaci@'{o}n Declarativa: L@'{o}gica y Restricciones").
 :- doc(author, "Jaime Bautista Salinero; 150103").
 :- doc(date, "@today").
-:- doc(module, "Este m@'{o}dulo representa una CPU anular donde cada registro puede contener un único símbolo..
+:- doc(module, "Este m@'{o}dulo representa una CPU anular donde cada registro puede contener un @'{u}nico s@'{i}mbolo.
 
-@section{Aclaraci@'{o}nes}
+La CPU tiene la capacidad de ejecutar dos tipos de instrucciones:
+@begin{enumerate}
+@item move(i): Copia el contenido del registro r@var{i} en el registro r@var{i+1} para 1 <= i < n, y de r@var{n} a r@var{1} para i=n.
+@item swap(i,j): Intercambia el contenido de los registros r@var{i} y r@var{j} para i < j.
+@end{enumerate}
+
+@section{Aclaraciones sobre predicados}
+
+@subsection{ejecutar_instruccion}
+Para este predicado se ha emplado un predicado auxiliar, elaborando un camino diferente seg@'{u}n el tipo de la instrucci@'{o}n, move o swap.
+As@'{i} mismo, se han elaborado los caminos correspondientes para que, en el caso en el que se sepan los estados inicial y finales, el predicado sea capaz de deducir la instrucci@'{o}n correspondiente que lo llevar@'{a} al estado final.
+
+Cada tipo de instrucci@'{o}n solo tendr@'{a} su propio camino independiente al otro tipo. 
+
+@subsection{generador_de_codigo}
+Una de las maneras existentes para que este predicado pueda devolver el camino m@'{a}s corto que lo lleve a la soluci@'{o}n es relizar la b@'{u}squeda en anchura en vez de en profundidad, siedo est@'{a} @'{u}ltimo la opci@'{o}n por defecto para el sistema Ciao prolog.
+
+A pesar de tener la posibilidad de emplear la librer@'{i}a bf de Ciao, se ha implementado una serie de predicados que realizan la b@'{u}squeda en anchura. La memoria necesaria para almacenar los estados visitados, as@'{i} como el camino que los ha llevado hasta ah@'{i}, se ha implementado mediante una estructura din@'{a}mica, insertando los estados correspondientes a medida que se visiten y eliminado los caminos anteriores. La estructura es la siguiente: @p
+@noindent
+@tt{[[EstadoActual,[Ruta,EstadoInicial]]}. @p
+@noindent
+Ejemplo: @tt{[[regs(1,1),[move(1),regs(1,2)]],[regs(2,2),[move(2),regs(1,2)]],...]}.
 
 @section{Estructura de la documentaci@'{o}n}
 
@@ -18,13 +40,8 @@ Los predicados explicados en la secci@'{o}n 'Documentation on exports' est@'{a}n
 @item Predicados sobre listas.
 @end{enumerate}
 
-@section{Consultas de comprobaci@'{o}n}
-
-A continuaci@'{o}n, se muestras las peticiones realizadas al programa para validar los resultados y a su derecha el resultado esperado:
-
-@subsection{basic_building}
-@noindent
-@tt{basic_building([0,0]). -> no} @p
+@section{Consultas}
+Las consultas de comprobaci@'{o}n se han automatizado en el c@'{o}digo con predicados test.
 
 @section{Generaci@'{o}n de la documentaci@'{o}n}
 
@@ -45,23 +62,44 @@ alumno_prode('Bautista', 'Salinero', 'Jaime', 'X150103').
 % --- Predicates for buldings exercise --- %
 %% ---------------------------------------%%
 
-%%% Types
-%:- prop move(i) # "Copia el contenido del registro r@var{i} en el registro r@var{i+1} para 1 <= i < n, y de r@var{n} a r@var{1} para i=n. @includedef{move/1}"
-%move(i).
-
-%:- prop swap(i,j) # "Intercambia el contenido de los registros r@var{i} y r@var{j} para i < j. @includedef{swap/2}"
-%swap(i,j).
-
-
 %%% Predicates
 
 :- pred eliminar_comodines(Registros, RegistrosSinComodines, ListaSimbolos) # "Sustituye los comodines * por variables. Ser@'{a} cierto si @var{RegistrosSinComodines} es una estructura de tipo reg/n que resulta de sustituir los comodines que aparecen en el argumento @var{Registros}/n por variables. @var{ListaSimbolos} es una lista que contiene todos los s@'{i}mbolos utilizados en el t@'{e}rmino @var{Registros}/n en el mismo orden en los que estos aparecen en los registros, permiti@'{e}ndose que haya s@'{i}mbolos repetidos. @includedef{eliminar_comodines/3}".
+:- test eliminar_comodines(A,B,C) : (A=regs(1,1,+,5,*)) => (B=regs(1,1,+,5,_),C=[1,1,+,5]) + not_fails # "eliminar comodines con un comodín al final y elementos repetidos".
+:- test eliminar_comodines(A,B,C) : (A=regs(1,1,+,5,6)) => (B=regs(1,1,+,5,6),C=[1,1,+,5,6]) + not_fails # "eliminar comodines sin comodines y elementos repetidos".
+:- test eliminar_comodines(A,B,C) : (A=regs(*,*,*,*,*)) => (B=regs(_,_,_,_,_),C=[]) + not_fails # "eliminar comodines con todos los elementos comodines".
 eliminar_comodines(Registros, RegistrosSinComodines, ListaSimbolos) :-
     functor(Registros,regs,N),
     functor(RegistrosSinComodines,regs,N),
     remove_wildcard(N,Registros,RegistrosSinComodines),
     create_symbol_list(0,N,Registros,ListaSimbolos).
 
+:- pred ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) # "Materializa la transici@'{o}n entre los estados actual y siguiente mediante la ejecuci@'{o}n de una instrucci@'{o}n. @includedef{ejecutar_instruccion/3}".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(7)) => (C=regs(1,2,3,4,5,6)) + fails # "ejecutar instruccion move en un índice no existente".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(3)) => (C=regs(1,2,3,3,5,6)) + not_fails # "ejecutar instruccion move en un índice situado a la mitad".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(1)) => (C=regs(1,1,3,4,5,6)) + not_fails # "ejecutar instruccion move en un índice situado al principio".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(6)) => (C=regs(6,2,3,4,5,6)) + not_fails # "ejecutar instruccion move en un índice siteado al final".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=swap(3,4)) => (C=regs(1,2,4,3,5,6)) + not_fails # "ejecutar instruccion swap con índices situado en la mitad".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=swap(1,6)) => (C=regs(6,2,3,4,5,1)) + not_fails # "ejecutar instruccion swap con índices situados en los extremos".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=swap(6,1)) => (C=regs(1,2,3,4,5,6)) + fails # "ejecutar instruccion swap con índice J mayor que I".
+:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=swap(1,7)) => (C=regs(1,2,3,4,5,6)) + fails # "ejecutar instruccion swap con índice J no existente".
+ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) :-
+    execute_instruction(EstadoActual,Instruccion,EstadoSiguiente).
+
+:- pred generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) # "Ser@'{a} cierto si @var{ListaDeInstrucciones} unifica con una lista de instrucciones de la CPU que aplicadas secuencialmente desde un estado inicial de los registros representado por @var{EstadoInicial} permite transitar hacia el estado final de los registros representado por @var{EstadoFinal}. @includedef{generador_de_codigo/3}".
+:- test generador_de_codigo(A,B,C) : (A=regs(a,b,c,d), B=regs(a,d,a,b)) => (C=[move(2),move(1),swap(2,4),swap(3,4)]) + not_fails # "ejecutar instruccion swap con índice J no existente".
+:- test generador_de_codigo(A,B,C) : (A=regs(a,b,c), B=regs(a,a,*)) => (C=[move(1)]) + not_fails # "ejecutar instruccion swap con índice J no existente".
+generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) :-
+    eliminar_comodines(EstadoInicial,InicialSinComodines,_),
+    eliminar_comodines(EstadoFinal,FinalSinComodines,_),
+    code_generator(InicialSinComodines,FinalSinComodines,ListaDeInstrucciones).
+
+%% ---------------------------------------%%
+% --         Axuliary predicates        -- %
+%% ---------------------------------------%%
+
+%%% For eliminar_comodines
+:- pred remove_wildcard(I,R,Rs) # "@var{Rs} ser@'{a} una estructura de datos del mismo tama@~{n}o que @var{R} sustituyendo los comodines(*) de @var{R} por la variable an@'{o}nima. @var{I} ser@'{a} el acumulador, siendo necesario pasarle como primer valor el tama@~{n}o total de la estructura de datos. @includedef{remove_wildcard/3}".
 remove_wildcard(0,_,_) :- !.
 remove_wildcard(I,R,Rs) :-
     %I > 0, % El corte del anterior lo sustituye
@@ -71,10 +109,12 @@ remove_wildcard(I,R,Rs) :-
     I1 is I - 1,
     remove_wildcard(I1,R,Rs).
 
+:- pred substitute_wildcard(X,Y) # "Para el caso en que @var{X} sea un comod@'{i}, @var{Y} ser@'{a} la variable an@'{o}nima. En otro caso @var{Y} ser@'{a} igual que @var{X}. @includedef{substitute_wildcard/2}".
 substitute_wildcard(*,_).
 substitute_wildcard(X,X) :-
     X \== '*'.
 
+:- pred create_symbol_list(I,Max,R,S) # "Este predicado generar@'{a} una lista, en @var{S} compuesta por los s@'{i}mbolos de la estructura de datos en @var{R}omitiendo el comod@'{i} (*). En @var{Max} se le debe de pasar la longitud de la estructura @var{R} e @var{I} ser@'{a} la variable usada como acumulador. @includedef{create_symbol_list/4}".
 create_symbol_list(I,Max,_,S) :- 
     I =:= Max,
     list(S), !.
@@ -89,43 +129,9 @@ create_symbol_list(I,Max,R,S) :-
     X == '*',
     create_symbol_list(I1,Max,R,S).
 
-%subterm(Term,Term).
-%subterm(Sub,Term) :-
-%    compound(Term),
-%    functor(Term,F,N),
-%    subterm(N,Sub,Term).
-%subterm(N,Sub,Term) :-
-%    N > 1,
-%    N1 is N-1,
-%    subterm(N1,Sub,Term).
-%subterm(N,Sub,Term) :-
-%    arg(N,Term,Arg),
-%    subterm(Sub,Arg).
-%
-%substitute(Old,New,Old,New).
-%substitite(Old,New,Term,Term) :-
-%    constant(Term),
-%    Term \== Old.
-%substitute(Old,New,Term,Term1) :-
-%    compound(Term),
-%    functor(Term,F,N),
-%    functor(Term1,F,N),
-%    substitute(N,Old,New,Term,Term1).
-%substitute(N,Old,New,Term,Term1) :-
-%    N > 0,
-%    arg(N,Term,Arg),
-%    substitute(Old,New,Arg,Arg1),
-%    arg(N,Term1,Arg1),
-%    N1 is N-1,
-%    substitute(N1,Old,New,Term,Term1).
-%substitute(0,Old,New,Term,Term1).
- 
-
-:- pred ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) # "Materializa la transici@'{o}n entre los estados actual y siguiente mediante la ejecuci@'{o}n de una instrucci@'{o}n. @includedef{ejecutar_instruccion/3}".
-:- test ejecutar_instruccion(A,B,C) : (A=regs(1,2,3,4,5,6), B=move(3)) => (C=regs(1,2,3,3,4,5,6)) + not_fails # "Prueba".
-ejecutar_instruccion(EstadoActual, Instruccion, EstadoSiguiente) :-
-    execute_instruction(EstadoActual,Instruccion,EstadoSiguiente).
-
+%%% For ejecutar_instruccion
+:- pred execute_instruction(Ea,I,Es) # "Predidado auxiliar para ejecutar instrucci@'{o}n, mediante el cual, al ejecutar la instrucci@'{o}n @var{I} sobre la estructura de registros @var{Ea} se debe obtener @var{Ea}. @includedef{execute_instruction/3}".
+% Basic movements
 execute_instruction(Ea,move(I),Es) :- % I < N
     nonvar(I),
     functor(Ea,regs,N),
@@ -151,6 +157,7 @@ execute_instruction(Ea,swap(I,J),Es) :-
     functor(Ea,regs,N),
     functor(Es,regs,N),
     I =< N,
+    I < J,
     arg(I,Ea,Xi),
     arg(J,Ea,Xj),
     arg(I,Es,Xj),
@@ -162,7 +169,14 @@ execute_instruction(Ea,move(I),Es) :-
     var(I),
     functor(Ea,regs,N),
     execute_instruction1(Ea,move(0),I,N,Es).
+% Backtracking for swap
+execute_instruction(Ea,swap(I,J),Es) :-
+    var(I),
+    var(J),
+    functor(Ea,regs,N),
+    execute_instruction1(Ea,swap(0,1),I,J,N,Es).
 
+:- pred execute_instruction1(Ea,In,I,N,Es) # " Predicado encargado de realizar el backtracking correspondiente para averiguar la instrucci@'{o}n @var{In} de move, que llevará el registro @var{Ea} a @var{Es}. @var{N} ser@'{a} la longitud m@'{a}xima de los registros mientras que @var{I} ser@'{a} el acumulador que permite la construcci@'{o} de todos los movimientos posibles. @includedef{execute_instruction1/5}".
 execute_instruction1(Ea,move(I),I,_,Es) :- % solution
     execute_instruction(Ea,move(I),Es).
 execute_instruction1(Ea,move(I1),I,N,Es) :-
@@ -171,12 +185,7 @@ execute_instruction1(Ea,move(I1),I,N,Es) :-
     I2 is I1+1,
     execute_instruction1(Ea,move(I2),I,N,Es).
     
-% Backtracking for swap
-execute_instruction(Ea,swap(I,J),Es) :-
-    var(I),
-    functor(Ea,regs,N),
-    execute_instruction1(Ea,swap(0,1),I,J,N,Es).
-
+:- pred execute_instruction1(Ea,In,I,J,N,Es) # " Predicado encargado de realizar el backtracking correspondiente para averiguar la instrucci@'{o}n @var{In} de swap, que llevará el registro @var{Ea} a @var{Es}. @var{N} ser@'{a} la longitud m@'{a}xima de los registros mientras que @var{I} y @var{J} ser@'{a}n los acumuladores que permiten la construcci@'{o} de todos los cambios posibles. En un camino se incrementar@'{a} @var{J} y en otro camino @var{I} y @var{J} a la vez. @includedef{execute_instruction1/6}".
 execute_instruction1(Ea,swap(I,J),I,J,_,Es) :- % solution
     I \== J,
     execute_instruction(Ea,swap(I,J),Es).
@@ -196,7 +205,8 @@ execute_instruction1(Ea,swap(I1,J1),I,J,N,Es) :-
     J2 is J1+1,
     execute_instruction1(Ea,swap(I2,J2),I,J,N,Es).
 
-% Aqui hay que pasarle functor del mismo tamaño
+% Aqui hay que pasarle functor del mismo tamano
+:- pred subcopy_term(I,Ea,Es) # "Copia los elementos de la estructura @var{Ea} a la misma posici@'{o}n en la estructura @var{Es} siempre y cuando el elemento correspondiente en @var{Es} no est@'{e} previamente inicializado. @var{I} ser@'{a} el acumuludar para recorrer las estructuras y que como valor inicial se le debe de pasar la longitud de las mismas. @includedef{subcopy_term/3}". 
 subcopy_term(0,_,_).
 subcopy_term(I,Ea,Es) :-
     arg(I,Es,X1),
@@ -210,49 +220,22 @@ subcopy_term(I,Ea,Es) :-
     I1 is I-1,
     subcopy_term(I1,Ea,Es).
 
-    
-
-:- pred generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) # "Ser@'{a} cierto si @var{ListaDeInstrucciones} unifica con una lista de instrucciones de la CPU que aplicadas secuencialmente desde un estado inicial de los registros representado por @var{EstadoInicial} permite transitar hacia el estado final de los registros representado por @var{EstadoFinal}. @includedef{generador_de_codigo/3}".
-generador_de_codigo(EstadoInicial, EstadoFinal, ListaDeInstrucciones) :-
-    eliminar_comodines(EstadoInicial,InicialSinComodines,_),
-    eliminar_comodines(EstadoFinal,FinalSinComodines,_),
-    code_generator(InicialSinComodines,FinalSinComodines,ListaDeInstrucciones).
-
-%code_generator(Ef,Ef,[]).
+%%% For generador_de_codigo
+:- pred code_generator(Ei,Ef,Path) # "Inicializa la estructura din@'{a}mica empleada para la memoria del camino y los estados de la b@'{u}queda por anchura. As@'{i} mismo, ejecuta la b@'{u}squeda por anchura pasandole como punto de partida la estructura inicial @var{Ei} y como meta la estructura final @var{Ef}. @includedef{code_generator/3}".
 code_generator(Ei,Ef,Path) :-
     retractall( seen( _ ) ),
     bfs( Ef, [[Ei,[Ei]]], [_|Path] ). 
 
-% given a goal integer, it tries to determine the shortest
-% series of actions needed to get to this integer given any other
-% integer.  The actions allowed are increment, decrement, and
-% multiply by two
-
-% states are represented as two element lists
-% the first is a number, and the second is a path
-
-% gets the successors of the given state
-% note that it must be redone via backtracking in order to
-% get all of the successors
-successors( [N,Path], [NewN, [Function|Path]] ) :-
-	ejecutar_instruccion(N,Function,NewN).
-
-% gets all successors as a list
-successors_list( State, Result ) :-
-	findall(X,successors(State,X),Result).
-
-% records results that have already been seen
+% dynamic structure for already seen states
 :- dynamic seen/1.
 
-% given a list of states, it will add each state to the table
-% of states that have already been seen
-add_to_seen( [] ).
-add_to_seen( [[N|_]|Rest] ) :-
-        assertz( seen( N ) ),
-        add_to_seen( Rest ).
+:- pred add_to_seen(E) # "Dada una lista de estados @var{N} los a@~{n}ade a la estructura din@'{a}mica de estados ya vistos. @includedef{add_to_seen/1}". 
+add_to_seen([]).
+add_to_seen([[N|_]|Rest]) :-
+        assertz(seen(N)),
+        add_to_seen(Rest).
 
-% removes all states that have already been seen
-% returns a new list
+:- pred remove_seen(E,L) # "Dada una lista @var{E} elimina los estados que ya han sido vistos de la estructura din@'{a}mica y devuelve una lista nueva con los que no se han visto a@'{u}n en @var{L}. @includedef{remove_seen/2}".
 remove_seen( [], [] ).
 remove_seen( [[N|_]|Rest], Result ) :-
         seen( N ), !,
@@ -260,25 +243,24 @@ remove_seen( [[N|_]|Rest], Result ) :-
 remove_seen( [State|Rest], [State|Result] ) :-
         !, remove_seen( Rest, Result ).
 
-% performs a BFS, with the given goal and queue
-bfs( Goal, [[Goal|[Path]]|_], FinalPath ) :-
-        % note that operations are added from the front, and it's
-        % more natural to read them left to right
-        !, reverse( Path, FinalPath ).
-bfs( Goal, [State|Rest], Result ) :-
-	successors_list( State, Successors ),
-	remove_seen( Successors, NewStates ),
-	add_to_seen( NewStates ),
-	append( Rest, NewStates, Queue ),
-	bfs( Goal, Queue, Result ).
+:- pred next_states(X,Y) # "Mediante un estado actual y su ruta asociada en @var{X} y con estructura [Estado,Ruta], se devuelve un estado siguiente con la nueva ruta asociada en @var{Y} con estructura [NuevoEstado,[NuevoMoviento,Ruta]]. @includedef{next_states/2}".
+next_states([N,Path], [NewN,[Function|Path]]) :-
+    ejecutar_instruccion(N,Function,NewN).
 
-% runs the BFS for the given start integer and goal integer
-% returns the path to reach the goal in "Path"
-go( Start, Goal, Path ) :-
-        retractall( seen( _ ) ),
-        bfs( Goal, [[Start,[Start]]], Path ). 
+:- pred next_states_list(State,Result) # "Devuelve todos los elementos del siguiente nivel en el @'{a}rbol partiendo del estado actual @var{State}. @var{Result} tendr@'{a} la misma estructura que los elementos almacenados en la estructura din@'{a}mica seen/1. @includedef{next_states_list/2}".
+next_states_list(State, Result) :-
+    findall(X,next_states(State,X),Result).
 
-%%%% Auxiliary predicates
+
+:- pred bfs(Goal,Queue,Path) # "Ejecuta el algoritmo de b@'{u}squeda en anchura para una meta @var{Goal} y una cola en @var{Queue}. Devuelve el resultado final de la meta y la ruta en @var{Path}. @includedef{bfs/3}".
+bfs(Goal,[[Goal|[Path]]|_],FinalPath) :-
+        !, reverse(Path,FinalPath).
+bfs(Goal,[State|Rest],Result) :-
+    next_states_list(State,Successors),
+    remove_seen(Successors,NewStates),
+    add_to_seen(NewStates),
+    append(Rest,NewStates,Queue),
+    bfs(Goal,Queue,Result).
 
 %% ---------------------------------------%%
 % -- Predicates for List representation -- %
@@ -289,24 +271,3 @@ list([]).
 list([_|Xs]) :-
      list(Xs).
 
-:- pred list_append(Xs,Ys,Zs) # "@var{Zs} ser@'{a} el resultado de introducir la lista @var{Ys} al final de la lista @var{Xs}. @includedef{list_append/3}".
-list_append([],Ys,Ys).
-list_append([X|Xs],Ys,[X|Zs]) :-
-	list_append(Xs,Ys,Zs).
-
-
-:- pred list_reverse(Xs,Ys) # "@var{Ys} ser@'{a} la lista @var{Xs} del rev@'{e}s, es decir, intercambiando cada elemento 'n' de @var{Xs} por longitud(@var{Xs}) -'n' - 1. @includedef{list_reverse/2}".
-list_reverse(Xs,Ys) :-
-    list_reverse(Xs,[],Ys).
-:- pred list_reverse(Xs,Acc,Ys) # "@var{Ys} ser@'{a} la lista @var{Xs} del rev@'{e}s. Se genera mediante el uso de un acumulador de elementos. @includedef{list_reverse/3}".
-list_reverse([],Ys,Ys).
-list_reverse([X|Xs],Acc,Ys) :-
-	list_reverse(Xs,[X|Acc],Ys).
-
-:- pred list_flatten(Xs,Ys) # "Aplana la lista @var{Xs}, devolviendo el resultado en @var{Ys}. El aplanado consiste en generar una lista de elementos, en este caso naturales, a partir de una lista cuyos elementos son listas. @includedef{list_flatten/2}".
-list_flatten([],[]).
-list_flatten(X,[X]).
-list_flatten([X|Xs],Y) :-
-    list_flatten(X,Ys1),
-    list_flatten(Xs,Ys2),
-    list_append(Ys1,Ys2,Y).
